@@ -50,15 +50,21 @@ process convert_to_upper {
 workflow {               // defines the workflow, the main part of the pipeline that connects processes together
     ch_str = channel.of(params.str)  // creates a channel (a data stream) named ch_str and puts the params.str value in the channel. 
                                     // Channels are like conveyer belts that carry data between processes
+                                    // to pass a file, use channel.fromPath('path/to/file')
+                                    // Note that if a .csv file is passed, the splitCsv operator can be used to split the file into rows/columns, and
+                                    // the .map{} operator can be used to specifty how to handle each row/column
 
     ch_chunks = split(ch_str) // runs the split process with ch_str as input. 
                               // The output is a channel of chunk files grouped as single element in a list, e.g. [[chunk_aa, chunk_ab, chunk_ac]]
              
 
-    convert_to_upper(ch_chunks.flatten()) // runs the convert_to_upper process on each chunk file. 
+    convert_to_upper(ch_chunks
+                    .view()     // see input to the process before flatten
+                    .flatten() // runs the convert_to_upper process on each chunk file. 
                                           // flatten() separates the grouped files so each chunk is processed independently in parallel.
                                           // Without flatten: [[chunk_aa, chunk_ab]] (one element containing both files)
                                           // With flatten: [chunk_aa], [chunk_ab] (two separate elements, processed in parallel)
+                    .view())    // see input after flatten
 }
 
 
