@@ -1,7 +1,10 @@
 params.str = "Hello world!" // defines a parameter named str with a default value of "Hello world!". 
                             // Parameters are inputs you can change when running the pipeline, e.g. nextflow run main.nf --str "Different text"
 
+params.character = "turkey"
 
+
+include { cowpy } from './modules/cowpy.nf'  // includes the cowpy.nf file, making its process available to this workflow
 
 process split {             // defines a process -- a unit of work in Nextflow -- named split
     publishDir "results/lower"   // save a copy/link of outfiles files to this directory. 
@@ -47,6 +50,27 @@ process convert_to_upper {
 
 }
 
+process collect_results {
+
+    publishDir "results/collected"
+
+    input:
+    path input_files
+
+    output:
+    path "collected_output.txt", emit: outfile // outputs the collected output file as 'outfile' to the channel
+    val num_chunks, emit: count // outputs the number of chunks as 'count' to the channel
+
+    script:
+    num_chunks = input_files.size()  // counts number of input files and assigns them to the variable num_chunks. This is nextflow Groovy code, not bash
+    """ 
+    cat ${input_files} > collected_output.txt
+    """
+}
+
+
+
+
 workflow {               // defines the workflow, the main part of the pipeline that connects processes together
     ch_str = channel.of(params.str)  // creates a channel (a data stream) named ch_str and puts the params.str value in the channel. 
                                     // Channels are like conveyer belts that carry data between processes
@@ -58,6 +82,7 @@ workflow {               // defines the workflow, the main part of the pipeline 
                               // The output is a channel of chunk files grouped as single element in a list, e.g. [[chunk_aa, chunk_ab, chunk_ac]]
              
 
+    
     convert_to_upper(ch_chunks
                     .view()     // see input to the process before flatten
                     .flatten() // runs the convert_to_upper process on each chunk file. 
@@ -65,10 +90,24 @@ workflow {               // defines the workflow, the main part of the pipeline 
                                           // Without flatten: [[chunk_aa, chunk_ab]] (one element containing both files)
                                           // With flatten: [chunk_aa], [chunk_ab] (two separate elements, processed in parallel)
                     .view())    // see input after flatten
+    
+    convert_to_upper.out.collect().view()  // view the output of convert_to_upper process, which is a channel of upper_chunk files
+
+    collect_results(convert_to_upper.out.collect())   // runs the collect_results process with all the output files from convert_to_upper as input. 
+                                            // collect() gathers all items in the channel into a single list, e.g. [upper_chunk_aa, upper_chunk_ab]
+                                            // Without collect(): [upper_chunk_aa], [upper_chunk_ab] (two separate elements)
+                                            // With collect(): [[upper_chunk_aa, upper_chunk_ab]] (one element containing both files)
+                                            // Note that collect() is a terminal operation; it ends the channel and no further operations can be performed on it
+                                            // If you want to see the contents of the channel before collecting, use the view() operator as shown below
+                                            // collect_results( convert_to_upper.out.view()
+                                            // Note that collect does not sort the input files, they will be input in whatever order they finish processing.
+
+    collect_results.out.count.view {var -> "The number of chunks created and processed was: ${var}"}  // view the output of collect_results process, which is a tuple of the collected output file and the number of chunks
+
+    cowpy(collect_results.out.outfile, params.character)  // runs the cowpy process from the included cowpy.nf module, with the collected output file and character parameter as inputs
+
 }
-
-
-// NOTES
+// NOTES    
 
 // Resume:
 // If the nextflow pipeline is modified, or inputs change, you can re-run only the processes that have different inputs / code/ outputs using the -resume flag when running the pipeline 
